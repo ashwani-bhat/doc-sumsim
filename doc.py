@@ -9,7 +9,7 @@ import glob, os
 
 
 class DocumentFeature():
-    def __init__(self, dir):
+    def __init__(self, dir, clean):
 
         corpus = []
         corpus_dict = {}
@@ -19,7 +19,9 @@ class DocumentFeature():
             document = f.read()
             roll_no = file.split('.')[0]
             
-            clean_text = clean_document(document)
+            clean_text = document
+            if clean:
+                clean_text = clean_document(document)
             corpus.append(clean_text)
             corpus_dict[roll_no] = document
             f.close()
