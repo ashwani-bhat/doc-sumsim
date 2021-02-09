@@ -6,62 +6,47 @@ from utils import cosine_similarity, clean_document
 
 import scipy.sparse
 import glob, os
+import json
 
-
-class DocumentFeature():
+class DocumentFeature:
     def __init__(self, dir, clean):
+        f = open('corpus.json', encoding='utf-8')
+        self.corpus = json.load(f)
 
-        corpus = []
-        corpus_dict = {}
-        os.chdir(dir)
-        for file in glob.glob("*.txt"):
-            f = open(file, 'r', encoding='utf-8')
-            document = f.read()
-            roll_no = file.split('.')[0]
-            
-            clean_text = document
-            if clean:
-                clean_text = clean_document(document)
-            corpus.append(clean_text)
-            corpus_dict[roll_no] = document
-            f.close()
+        if clean:
+            self.corpus = {k: clean_document(str(v)) for k, v in self.corpus.items()}
         
-        self.corpus = corpus
-        self.corpus_dict = corpus_dict
-    
+        self.df = pd.DataFrame.from_dict(self.corpus, orient='index', columns=['Summary']).reset_index()
+        self.df.columns = ['Roll Number', 'Summary']
 
 
-    def get_features(self):
-
+    def create_features(self):
         vectorizer = TfidfVectorizer()
-        X = vectorizer.fit_transform(self.corpus)
+        X = vectorizer.fit_transform(self.df['Summary'])
         feature_names = vectorizer.get_feature_names()
 
         vectorizer_cv = CountVectorizer(ngram_range=(2, 4))
-        X_cv = vectorizer_cv.fit_transform(self.corpus)
+        X_cv = vectorizer_cv.fit_transform(self.df['Summary'])
         feature_names.extend(vectorizer_cv.get_feature_names())
         X = scipy.sparse.hstack([X, X_cv])
 
         dense = X.todense()
         denselist = dense.tolist()
-        df = pd.DataFrame(denselist, columns=feature_names)
-        
-        df["Roll Number"] = self.corpus_dict.keys()
-        df.set_index("Roll Number",inplace=True)
+        df_x = pd.DataFrame(denselist, columns=feature_names)
+        self.df = pd.concat([self.df, df_x], axis=1).drop('Summary', axis=1).set_index('Roll Number')
 
-        return df
+    def _find_similar(self, roll_no, x, threshold, verbose):
+        if roll_no != x:
+            cs = cosine_similarity(self.df.loc[roll_no], self.df.loc[x])
+            if cs < threshold:
+                if verbose:
+                    print(f"{roll_no} and {x} has a cosine similarity of {cs}")
+                return True
 
-
-    def view_corpus(self):
-        print("#################  Corpus #####################\n")
-        print(self.corpus_dict)
-        print("\n#############################################")
-
-    def get_similar_docs(self, df, roll_no, threshold):
-        current = df.loc[roll_no]
-        for idx, row in df.iterrows():
-            if idx != roll_no:
-                two = row
-                cs = cosine_similarity(current, two)
-                if cs < threshold:
-                    print(f"{roll_no} and {idx} has a cosine similarity of {cs}")
+    def compare_one(self, roll_no, threshold, verbose=False):
+        return list(filter(lambda x: self._find_similar(roll_no, x, threshold, verbose), \
+            self.corpus.keys()))
+    
+    def compare_all(self, threshold, verbose=False):
+        return {roll_no: list(filter(lambda x: self._find_similar(roll_no, x, threshold, verbose), \
+            self.corpus.keys())) for roll_no in self.corpus.keys()}
